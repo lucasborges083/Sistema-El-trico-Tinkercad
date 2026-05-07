@@ -1,0 +1,339 @@
+// ============================================================
+//  SIMULACAO COMPLETA - Fluxograma Eletrico E1 > E2 > E3
+//
+//  ENTRADAS (botoes com resistor 10k pull-down):
+//    D3  -> TC1   : E1 com tensao?
+//    D5  -> Def Disj A : com defeito? (toggle)
+//    D7  -> TC2   : E2 com tensao?
+//    D9  -> Def Disj B : com defeito? (toggle)
+//    D11 -> TC3   : E3 com tensao?
+//    D12 -> Def Disj E : com defeito? (toggle)
+//
+//  SAIDAS (LEDs com resistor 220 ohm):
+//    D2  -> LED Disj A fechado
+//    D4  -> LED TC4 passivo
+//    D6  -> LED Disj B fechado
+//    D8  -> LED TC5 passivo
+//    D10 -> LED Disj E fechado
+//    D13 -> LED Verde - Carga OK
+//
+//  VALORES FIXOS (sem pino disponivel):
+//    TC4, TC5 = passivos (sem tensao = OK)
+//    DisjCD, DisjQ1, DisjQ2 = sem defeito
+//    TC6 = com tensao
+// ============================================================
+
+// ---- PINOS DE ENTRADA ----
+const int BOTAO_TC1   = 3;
+const int BOTAO_DISJA = 5;
+const int BOTAO_TC2   = 7;
+const int BOTAO_DISJB = 9;
+const int BOTAO_TC3   = 11;
+const int BOTAO_DISJE = 12;
+
+// ---- PINOS DE SAIDA ----
+const int LED_DISJA = 2;
+const int LED_TC4   = 4;
+const int LED_DISJB = 6;
+const int LED_TC5   = 8;
+const int LED_DISJE = 10;
+const int LED_VERDE = 13;
+
+// ---- VARIAVEIS DE LEITURA ----
+int leitTC1_atual  = 0, leitTC1_ant  = 0;
+int leitDJA_atual  = 0, leitDJA_ant  = 0;
+int leitTC2_atual  = 0, leitTC2_ant  = 0;
+int leitDJB_atual  = 0, leitDJB_ant  = 0;
+int leitTC3_atual  = 0, leitTC3_ant  = 0;
+int leitDJE_atual  = 0, leitDJE_ant  = 0;
+
+// ---- ESTADOS DOS COMPONENTES ----
+bool tc1_ativo     = false;
+bool disjA_defeito = false;
+bool tc2_ativo     = false;
+bool disjB_defeito = false;
+bool tc3_ativo     = false;
+bool disjE_defeito = false;
+
+// ---- ESTADOS ANTERIORES ----
+bool ult_tc1 = false;
+bool ult_dja = false;
+bool ult_tc2 = false;
+bool ult_djb = false;
+bool ult_tc3 = false;
+bool ult_dje = false;
+
+// ============================================================
+// FUNCOES AUXILIARES
+// ============================================================
+
+void desligarLeds() {
+  digitalWrite(LED_DISJA, LOW);
+  digitalWrite(LED_TC4,   LOW);
+  digitalWrite(LED_DISJB, LOW);
+  digitalWrite(LED_TC5,   LOW);
+  digitalWrite(LED_DISJE, LOW);
+  digitalWrite(LED_VERDE, LOW);
+}
+
+void piscar(int pino, int vezes) {
+  for (int i = 0; i < vezes; i++) {
+    digitalWrite(pino, LOW);  delay(150);
+    digitalWrite(pino, HIGH); delay(150);
+  }
+}
+
+void falhaTotal() {
+  Serial.println("  !!! FALHA TOTAL - Nenhuma fonte disponivel !!!");
+  Serial.println("  E1, E2 e E3 indisponiveis ou com defeito.");
+  for (int i = 0; i < 5; i++) {
+    digitalWrite(LED_DISJA, HIGH);
+    digitalWrite(LED_DISJB, HIGH);
+    digitalWrite(LED_DISJE, HIGH);
+    digitalWrite(LED_VERDE, HIGH);
+    delay(150);
+    desligarLeds();
+    delay(150);
+  }
+  Serial.println("");
+}
+
+void etapaFinal(String via, int fonte) {
+  Serial.println("  [C/D] Disj C e D sem defeito -> FECHANDO C e D...");
+  delay(500);
+  Serial.println("  [C/D] Disj C e D FECHADOS. Quadros energizados.");
+  delay(300);
+
+  if (fonte == 1) {
+    Serial.println("  -- Quadro 2 --");
+    Serial.println("  [Q2] Disj Q2 sem defeito -> FECHANDO Q2...");
+    delay(400);
+    Serial.println("  [Q2] CARGA DO QUADRO 2 SENDO ALIMENTADA!");
+    delay(400);
+    Serial.println("  -- Quadro 1 --");
+    Serial.println("  [Q1] Disj Q1 sem defeito -> FECHANDO Q1...");
+    delay(400);
+    Serial.println("  [TC6] TC6 captando tensao pos ramificacao Q1.");
+    delay(300);
+    Serial.println("  [Q1] CARGA DO QUADRO 1 SENDO ALIMENTADA!");
+  } else {
+    Serial.println("  -- Quadro 1 --");
+    Serial.println("  [Q1] Disj Q1 sem defeito -> FECHANDO Q1...");
+    delay(400);
+    Serial.println("  [TC6] TC6 captando tensao pos ramificacao Q1.");
+    delay(300);
+    Serial.println("  [Q1] CARGA DO QUADRO 1 SENDO ALIMENTADA!");
+    delay(400);
+    Serial.println("  -- Quadro 2 --");
+    Serial.println("  [Q2] Disj Q2 sem defeito -> FECHANDO Q2...");
+    delay(400);
+    Serial.println("  [Q2] CARGA DO QUADRO 2 SENDO ALIMENTADA!");
+  }
+
+  delay(300);
+  digitalWrite(LED_VERDE, HIGH);
+  piscar(LED_VERDE, 3);
+  digitalWrite(LED_VERDE, HIGH);
+  Serial.println("  *** CARGA SENDO ALIMENTADA via " + via + " ***");
+  Serial.println("");
+}
+
+// ============================================================
+// FLUXOGRAMA COMPLETO: E1 -> E2 -> E3
+// ============================================================
+
+void executarFluxograma() {
+  desligarLeds();
+  delay(300);
+
+  Serial.println("---");
+  Serial.println("  LEITURA DOS SENSORES");
+  Serial.println("---");
+  Serial.println("  TC1   (E1 tensao?) : " + String(tc1_ativo     ? "SIM" : "NAO"));
+  Serial.println("  DisjA (defeito?)   : " + String(disjA_defeito ? "SIM" : "NAO"));
+  Serial.println("  TC2   (E2 tensao?) : " + String(tc2_ativo     ? "SIM" : "NAO"));
+  Serial.println("  DisjB (defeito?)   : " + String(disjB_defeito ? "SIM" : "NAO"));
+  Serial.println("  TC3   (E3 tensao?) : " + String(tc3_ativo     ? "SIM" : "NAO"));
+  Serial.println("  DisjE (defeito?)   : " + String(disjE_defeito ? "SIM" : "NAO"));
+  Serial.println("  [FIXOS] TC4=passivo TC5=passivo TC6=SIM");
+  Serial.println("  [FIXOS] DisjCD=OK DisjQ1=OK DisjQ2=OK");
+  Serial.println("...");
+  delay(400);
+
+  // ==================== E1 ====================
+  if (tc1_ativo && !disjA_defeito) {
+    Serial.println("  [E1] TC1 com tensao + Disj A OK");
+    Serial.println("  [E1] FECHANDO Disjuntor A...");
+    digitalWrite(LED_DISJA, HIGH);
+    delay(800);
+    Serial.println("  [TC4] TC4 passivo - sem tensao = OK.");
+    digitalWrite(LED_TC4, HIGH);
+    delay(500);
+    Serial.println("  [TC5] TC5 passivo - sem tensao = OK.");
+    digitalWrite(LED_TC5, HIGH);
+    delay(500);
+    etapaFinal("E1 (Rede Eletrica 1)", 1);
+
+  // ==================== E1 FALHOU ====================
+  } else {
+    if (!tc1_ativo) {
+      Serial.println("  [E1] TC1 sem tensao. E1 indisponivel.");
+    } else {
+      Serial.println("  [E1] Disj A com DEFEITO. Pulando para E2...");
+      piscar(LED_DISJA, 3);
+    }
+    delay(400);
+
+    // ==================== E2 ====================
+    if (tc2_ativo && !disjB_defeito) {
+      Serial.println("  [E2] TC2 com tensao + Disj B OK");
+      Serial.println("  [E2] FECHANDO Disjuntor B...");
+      digitalWrite(LED_DISJB, HIGH);
+      delay(800);
+      Serial.println("  [TC5] TC5 passivo - sem tensao = OK.");
+      digitalWrite(LED_TC5, HIGH);
+      delay(500);
+      Serial.println("  [TC4] TC4 passivo - sem tensao = OK.");
+      digitalWrite(LED_TC4, HIGH);
+      delay(500);
+      etapaFinal("E2 (Rede Eletrica 2)", 2);
+
+    // ==================== E2 FALHOU ====================
+    } else {
+      if (!tc2_ativo) {
+        Serial.println("  [E2] TC2 sem tensao. E2 indisponivel.");
+      } else {
+        Serial.println("  [E2] Disj B com DEFEITO. Pulando para E3...");
+        piscar(LED_DISJB, 3);
+      }
+      delay(400);
+
+      // ==================== E3 ====================
+      if (tc3_ativo && !disjE_defeito) {
+        Serial.println("  [E3] TC3 com tensao + Disj E OK");
+        Serial.println("  [E3] FECHANDO Disjuntor E (Gerador Diesel)...");
+        digitalWrite(LED_DISJE, HIGH);
+        delay(800);
+        Serial.println("  [TC5] TC5 passivo - sem tensao = OK.");
+        digitalWrite(LED_TC5, HIGH);
+        delay(500);
+        Serial.println("  [TC4] TC4 passivo - sem tensao = OK.");
+        digitalWrite(LED_TC4, HIGH);
+        delay(500);
+        etapaFinal("E3 (Gerador Diesel)", 3);
+
+      // ==================== FALHA TOTAL ====================
+      } else {
+        if (!tc3_ativo) {
+          Serial.println("  [E3] TC3 sem tensao. Gerador indisponivel.");
+        } else {
+          Serial.println("  [E3] Disj E com DEFEITO.");
+          piscar(LED_DISJE, 3);
+        }
+        delay(300);
+        falhaTotal();
+      }
+    }
+  }
+
+  Serial.println("---");
+  Serial.println("  Altere os botoes para nova simulacao.");
+  Serial.println("");
+}
+
+// ============================================================
+// SETUP
+// ============================================================
+
+void setup() {
+  Serial.begin(9600);
+
+  pinMode(BOTAO_TC1,   INPUT);
+  pinMode(BOTAO_DISJA, INPUT);
+  pinMode(BOTAO_TC2,   INPUT);
+  pinMode(BOTAO_DISJB, INPUT);
+  pinMode(BOTAO_TC3,   INPUT);
+  pinMode(BOTAO_DISJE, INPUT);
+
+  pinMode(LED_DISJA, OUTPUT);
+  pinMode(LED_TC4,   OUTPUT);
+  pinMode(LED_DISJB, OUTPUT);
+  pinMode(LED_TC5,   OUTPUT);
+  pinMode(LED_DISJE, OUTPUT);
+  pinMode(LED_VERDE, OUTPUT);
+
+  desligarLeds();
+
+  Serial.println("---");
+  Serial.println("  SISTEMA E1 E2 E3 - Fluxograma");
+  Serial.println("  D3=TC1    D5=Def DisjA");
+  Serial.println("  D7=TC2    D9=Def DisjB");
+  Serial.println("  D11=TC3   D12=Def DisjE");
+  Serial.println("---");
+  Serial.println("");
+}
+
+// ============================================================
+// LOOP PRINCIPAL
+// ============================================================
+
+void loop() {
+
+  leitTC1_atual = digitalRead(BOTAO_TC1);
+  if (leitTC1_atual == 1 && leitTC1_ant == 0) {
+    tc1_ativo = !tc1_ativo;
+    delay(20);
+  }
+  leitTC1_ant = leitTC1_atual;
+
+  leitDJA_atual = digitalRead(BOTAO_DISJA);
+  if (leitDJA_atual == 1 && leitDJA_ant == 0) {
+    disjA_defeito = !disjA_defeito;
+    delay(20);
+  }
+  leitDJA_ant = leitDJA_atual;
+
+  leitTC2_atual = digitalRead(BOTAO_TC2);
+  if (leitTC2_atual == 1 && leitTC2_ant == 0) {
+    tc2_ativo = !tc2_ativo;
+    delay(20);
+  }
+  leitTC2_ant = leitTC2_atual;
+
+  leitDJB_atual = digitalRead(BOTAO_DISJB);
+  if (leitDJB_atual == 1 && leitDJB_ant == 0) {
+    disjB_defeito = !disjB_defeito;
+    delay(20);
+  }
+  leitDJB_ant = leitDJB_atual;
+
+  leitTC3_atual = digitalRead(BOTAO_TC3);
+  if (leitTC3_atual == 1 && leitTC3_ant == 0) {
+    tc3_ativo = !tc3_ativo;
+    delay(20);
+  }
+  leitTC3_ant = leitTC3_atual;
+
+  leitDJE_atual = digitalRead(BOTAO_DISJE);
+  if (leitDJE_atual == 1 && leitDJE_ant == 0) {
+    disjE_defeito = !disjE_defeito;
+    delay(20);
+  }
+  leitDJE_ant = leitDJE_atual;
+
+  if (tc1_ativo     != ult_tc1 ||
+      disjA_defeito != ult_dja ||
+      tc2_ativo     != ult_tc2 ||
+      disjB_defeito != ult_djb ||
+      tc3_ativo     != ult_tc3 ||
+      disjE_defeito != ult_dje) {
+
+    ult_tc1 = tc1_ativo;
+    ult_dja = disjA_defeito;
+    ult_tc2 = tc2_ativo;
+    ult_djb = disjB_defeito;
+    ult_tc3 = tc3_ativo;
+    ult_dje = disjE_defeito;
+    executarFluxograma();
+  }
+}
